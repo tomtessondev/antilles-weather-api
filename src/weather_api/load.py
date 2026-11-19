@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import httpx
-from sqlalchemy import Connection, Engine, Table, delete, select, true, tuple_
+from sqlalchemy import Connection, Engine, Table, delete, func, select, true, tuple_
 from sqlalchemy.dialects.postgresql import insert
 
 from weather_api.db import daily_air_quality, daily_weather, loads, locations
@@ -53,9 +53,9 @@ def load_marts(engine: Engine, marts: Marts) -> LoadResult:
     weather = [r.model_dump() for r in marts.weather]
     air = [r.model_dump() for r in marts.air_quality]
     with engine.begin() as conn:
-        if conn.execute(
-            select(loads.c.id).where(loads.c.generated_at == marts.generated_at)
-        ).first():
+        latest = conn.execute(select(func.max(loads.c.generated_at))).scalar()
+        # The same file again, or an older copy (CDN cache, old commit): keep what is there.
+        if latest is not None and marts.generated_at <= latest:
             return LoadResult(True, 0, 0, 0)
         # Towns first for the inserts, last for the deletes: daily rows reference them.
         _upsert(conn, locations, town_rows, ["location_code"])

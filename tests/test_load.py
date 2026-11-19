@@ -96,3 +96,23 @@ def test_extra_fields_in_the_file_are_ignored(db: Engine) -> None:
     for row in richer["air_quality"]:
         row["last_extracted_at"] = "2026-11-04T10:00:00"
     assert load_marts(db, Marts.model_validate(richer)).air_quality_rows == 6
+
+
+def test_an_older_file_is_skipped(db: Engine) -> None:
+    """A stale copy (CDN cache, old commit) must not overwrite newer rows."""
+    newer = json.loads(json.dumps(RAW))
+    newer["generated_at"] = "2026-11-05T10:12:00+00:00"
+    newer["weather"][0]["rain_total_mm"] = 9.5
+    load_marts(db, Marts.model_validate(newer))
+    assert load_marts(db, Marts.model_validate(RAW)).skipped is True
+    with db.connect() as conn:
+        rains = set(conn.execute(select(daily_weather.c.rain_total_mm)).scalars())
+    assert 9.5 in rains
+
+
+def test_an_empty_file_is_refused(db: Engine) -> None:
+    empty = json.loads(json.dumps(RAW))
+    empty["generated_at"] = "2026-11-05T10:12:00+00:00"
+    empty["weather"] = []
+    with pytest.raises(ValidationError):
+        load_marts(db, Marts.model_validate(empty))

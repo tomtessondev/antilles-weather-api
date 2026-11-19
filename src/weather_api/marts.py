@@ -6,7 +6,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Literal
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 
 class _Row(BaseModel):
@@ -48,6 +48,7 @@ class DailyAirQuality(_Row):
 
 class Marts(_Row):
     generated_at: AwareDatetime
-    locations: list[Location]
-    weather: list[DailyWeather]
-    air_quality: list[DailyAirQuality]
+    # An empty export would empty the tables (the file is the full state): refuse it.
+    locations: list[Location] = Field(min_length=1)
+    weather: list[DailyWeather] = Field(min_length=1)
+    air_quality: list[DailyAirQuality] = Field(min_length=1)

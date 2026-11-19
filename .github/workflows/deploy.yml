@@ -1,5 +1,8 @@
 name: Deploy
 
+permissions:
+  contents: read
+
 # On main: test, migrate the Neon database, build the image, deploy it to Cloud Run.
 on:
   push:
@@ -18,6 +21,10 @@ jobs:
 
   deploy:
     needs: test
+    # Only main deploys and migrates; the production environment holds DATABASE_URL and only
+    # accepts main.
+    if: github.ref == 'refs/heads/main'
+    environment: production
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -28,7 +35,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e .
-      - name: Migrate the database
+      - name: Migrate the database (direct Neon URL, not the pooler)
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: alembic upgrade head

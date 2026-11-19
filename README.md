@@ -61,10 +61,12 @@ GitHub Actions on main: tests → migrations → image → Artifact Registry →
 - **Access**: keys look like `aw_…`; only their SHA-256 is stored. `weather-api keys create
   --name <client> --per-minute <n>` prints a key once; `revoke` and `list` manage them.
 - **Keeping the database asleep**: Neon's free compute would run out if every request woke
-  it. A malformed key is refused on its shape, known keys are cached for a minute, the quota
-  is counted in memory (per instance: with two instances a key gets at most twice its
-  quota), and answers are cached until the next load. Between loads, repeated calls never
-  reach the database.
+  it. The active keys, the town codes and the latest load are read in one go at most every
+  15 minutes and held in memory; a malformed or unknown key, an unknown town, `/health` and
+  every repeated question are answered from memory, and answers are cached (512 at most)
+  until a new load. The price: a new or revoked key takes effect within 15 minutes, and new
+  data shows up within 15 minutes of the daily load. The quota is counted in memory per
+  instance (with two instances a key gets at most twice its quota).
 
 ## Cost
 

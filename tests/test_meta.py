@@ -50,3 +50,15 @@ def test_meta_and_locations(db: Engine, clock: FakeClock) -> None:
     missing = api.get("/v1/locations/XXX", headers=key)
     assert missing.status_code == 404
     assert missing.headers["content-type"].startswith("application/problem+json")
+
+
+def test_health_does_not_query_on_every_call(
+    db: Engine, clock: FakeClock, queries: list[str]
+) -> None:
+    load_marts(db, Marts.model_validate(RAW))
+    api = TestClient(create_app(Settings(), engine=db, clock=clock))
+    api.get("/health")
+    queries.clear()
+    for _ in range(10):
+        assert api.get("/health").status_code == 200
+    assert queries == []

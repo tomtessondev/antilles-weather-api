@@ -99,3 +99,21 @@ def test_dust_episodes_list_days_above_the_limit(api: tuple[TestClient, dict[str
 
 def test_data_responses_can_be_cached(api: tuple[TestClient, dict[str, str]]) -> None:
     assert get(api, "/v1/weather").headers["Cache-Control"] == "public, max-age=300"
+
+
+def test_empty_database_is_503_for_data_routes(db: Engine, clock: FakeClock) -> None:
+    key = {"X-API-Key": create_key(db, "test", per_minute=1000)}
+    client = TestClient(create_app(Settings(), engine=db, clock=clock))
+    for path in ("/v1/weather", "/v1/air-quality", "/v1/dust-episodes", "/v1/locations"):
+        response = client.get(path, headers=key)
+        assert response.status_code == 503, path
+        assert "no data" in response.json()["detail"].lower()
+
+
+def test_unknown_parameters_do_not_grow_the_cache(
+    api: tuple[TestClient, dict[str, str]],
+) -> None:
+    client, _ = api
+    for i in range(30):
+        get(api, "/v1/weather", junk=str(i))
+    assert len(client.app.state.response_cache) == 1  # type: ignore[attr-defined]  # Starlette app

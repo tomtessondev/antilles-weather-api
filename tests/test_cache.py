@@ -33,6 +33,6 @@ def test_cache_serves_without_the_database_until_new_data(
     newer["generated_at"] = "2026-11-05T10:12:00+00:00"
     newer["weather"][0]["rain_total_mm"] = 9.5
     load_marts(db, Marts.model_validate(newer))
-    clock.advance(61)
+    clock.advance(901)
     fresh = api.get("/v1/weather", params={"location": "BTE"}, headers=key).json()
     assert fresh["items"][0]["rain_total_mm"] == 9.5

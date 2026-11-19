@@ -151,7 +151,8 @@ resource "google_iam_workload_identity_pool_provider" "github" {
     "google.subject"       = "assertion.sub"
     "attribute.repository" = "assertion.repository"
   }
-  attribute_condition = "assertion.repository == '${var.github_repository}'"
+  # Only workflows of this repository running on main (deploys never run elsewhere).
+  attribute_condition = "assertion.repository == '${var.github_repository}' && assertion.ref == 'refs/heads/main'"
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"
   }

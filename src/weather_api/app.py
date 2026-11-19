@@ -10,12 +10,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import Engine
 
 from weather_api import problems
-from weather_api.access import Clock, KeyCache, RateLimiter
+from weather_api.access import RateLimiter
 from weather_api.cache import ResponseCache
 from weather_api.config import Settings, get_settings
 from weather_api.db import engine_for
-from weather_api.queries import latest_generated_at
 from weather_api.routes import data, meta
+from weather_api.snapshot import Clock, Snapshot
 
 DESCRIPTION = """
 Daily weather and air quality for six towns of Guadeloupe and Martinique, from the
@@ -34,11 +34,9 @@ def create_app(
     app.state.settings = settings
     app.state.engine = engine or engine_for(settings.database_url)
     app.state.clock = clock
-    app.state.key_cache = KeyCache(clock)
     app.state.limiter = RateLimiter(clock)
-    app.state.response_cache = ResponseCache(
-        clock, settings.cache_check_seconds, lambda: latest_generated_at(app.state.engine)
-    )
+    app.state.snapshot = Snapshot(app.state.engine, clock, settings.refresh_seconds)
+    app.state.response_cache = ResponseCache()
     app.add_middleware(
         CORSMiddleware, allow_origins=["*"], allow_methods=["GET"], allow_headers=["X-API-Key"]
     )

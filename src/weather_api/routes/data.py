@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import base64
 import binascii
-from collections.abc import Callable
 from datetime import date
 from typing import Annotated, Any, Literal
 
@@ -15,11 +14,10 @@ from sqlalchemy import Table
 
 from weather_api import queries
 from weather_api.access import require_key
-from weather_api.cache import ResponseCache
 from weather_api.db import daily_air_quality, daily_weather
+from weather_api.routes.common import cached, loaded_state
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(require_key)])
-CACHE_CONTROL = "public, max-age=300"
 
 
 class DailyWeather(BaseModel):
@@ -104,36 +102,37 @@ def decode_cursor(cursor: str) -> tuple[date, str]:
         raise HTTPException(422, "cursor: not a cursor returned by this API") from error
 
 
-def _cached[T](request: Request, response: Response, compute: Callable[[], T]) -> T:
-    cache: ResponseCache = request.app.state.response_cache
-    key = f"{request.url.path}?{sorted(request.query_params.multi_items())}"
-    response.headers["Cache-Control"] = CACHE_CONTROL
-    result: T = cache.get_or_compute(key, compute)
-    return result
-
-
-def _check(request: Request, codes: list[str], start: date | None, end: date | None) -> None:
+def _check(request: Request, codes: list[str], start: date | None, end: date | None) -> list[str]:
+    """Validates the filters in memory (no query) and returns the town codes, sorted and
+    without duplicates, as they go into the cache key."""
     if start and end and start > end:
         raise HTTPException(422, "start: must not be after end")
-    unknown = queries.unknown_codes(request.app.state.engine, codes)
+    state, _ = loaded_state(request)
+    unknown = sorted(set(codes) - state.codes)
     if unknown:
         raise HTTPException(404, f"No town with code {', '.join(map(repr, unknown))}.")
+    return sorted(set(codes))
 
 
 def _page(
-    request: Request, table: Table, codes: list[str], start: date | None, end: date | None,
-    cursor: str | None, limit: int,
+    request: Request, response: Response, table: Table, codes: list[str],
+    start: date | None, end: date | None, cursor: str | None, limit: int,
 ) -> dict[str, Any]:  # fmt: skip
     after = decode_cursor(cursor) if cursor else None
-    _check(request, codes, start, end)
-    rows = queries.page(request.app.state.engine, table, codes, start, end, after, limit)
-    more = len(rows) > limit
-    rows = rows[:limit]
-    last = rows[-1] if rows else None
-    next_cursor = (
-        encode_cursor(last["observed_date"], last["location_code"]) if more and last else None
-    )
-    return {"items": rows, "next_cursor": next_cursor}
+    towns = _check(request, codes, start, end)
+
+    def compute() -> dict[str, Any]:
+        rows = queries.page(request.app.state.engine, table, towns, start, end, after, limit)
+        more = len(rows) > limit
+        rows = rows[:limit]
+        last = rows[-1] if rows else None
+        next_cursor = None
+        if more and last:
+            next_cursor = encode_cursor(last["observed_date"], last["location_code"])
+        return {"items": rows, "next_cursor": next_cursor}
+
+    key = (table.name, tuple(towns), start, end, after, limit)
+    return cached(request, response, key, compute)
 
 
 @router.get("/weather", tags=["daily"], summary="Daily weather per town")
@@ -141,10 +140,7 @@ def weather(
     request: Request, response: Response, location: Towns = [], start: Start = None,  # noqa: B006
     end: End = None, limit: Limit = 100, cursor: Cursor = None,
 ) -> WeatherPage:  # fmt: skip
-    page = _cached(
-        request, response,
-        lambda: _page(request, daily_weather, location, start, end, cursor, limit),
-    )  # fmt: skip
+    page = _page(request, response, daily_weather, location, start, end, cursor, limit)
     return WeatherPage.model_validate(page)
 
 
@@ -153,10 +149,7 @@ def air_quality(
     request: Request, response: Response, location: Towns = [], start: Start = None,  # noqa: B006
     end: End = None, limit: Limit = 100, cursor: Cursor = None,
 ) -> AirQualityPage:  # fmt: skip
-    page = _cached(
-        request, response,
-        lambda: _page(request, daily_air_quality, location, start, end, cursor, limit),
-    )  # fmt: skip
+    page = _page(request, response, daily_air_quality, location, start, end, cursor, limit)
     return AirQualityPage.model_validate(page)
 
 
@@ -171,15 +164,14 @@ def summary(
 ) -> Summary:  # fmt: skip
     if days not in (7, 14, 30):
         raise HTTPException(422, "days: must be 7, 14 or 30")
-
-    def compute() -> dict[str, Any]:
-        _check(request, [code], None, None)
-        figures = queries.summary(request.app.state.engine, code, days)
-        if figures is None:
-            raise HTTPException(404, f"No complete day for {code!r} yet.")
-        return figures
-
-    return Summary.model_validate(_cached(request, response, compute))
+    _check(request, [code], None, None)
+    figures = cached(
+        request, response, ("summary", code, days),
+        lambda: queries.summary(request.app.state.engine, code, days),
+    )  # fmt: skip
+    if figures is None:  # cached too: a town with no complete day stays a 404 until new data
+        raise HTTPException(404, f"No complete day for {code!r} yet.")
+    return Summary.model_validate(figures)
 
 
 @router.get(
@@ -191,8 +183,9 @@ def dust_episodes(
     request: Request, response: Response, location: Towns = [],  # noqa: B006
     start: Start = None, end: End = None,
 ) -> DustEpisodes:  # fmt: skip
-    def compute() -> dict[str, Any]:
-        _check(request, location, start, end)
-        return {"items": queries.dust_episodes(request.app.state.engine, location, start, end)}
-
-    return DustEpisodes.model_validate(_cached(request, response, compute))
+    towns = _check(request, location, start, end)
+    items = cached(
+        request, response, ("dust", tuple(towns), start, end),
+        lambda: queries.dust_episodes(request.app.state.engine, towns, start, end),
+    )  # fmt: skip
+    return DustEpisodes(items=items)

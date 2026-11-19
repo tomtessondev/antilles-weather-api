@@ -15,8 +15,9 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5435/weather_api"
     marts_url: str = MARTS_URL
-    # How often the response cache asks the database whether new data was loaded.
-    cache_check_seconds: int = 60
+    # How often the in-memory snapshot (keys, towns, latest load) is read from the database:
+    # long enough for Neon to sleep between reads, short enough for a daily dataset.
+    refresh_seconds: int = 900
 
     @field_validator("database_url")
     @classmethod

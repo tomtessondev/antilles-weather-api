@@ -1,37 +1,38 @@
-"""Responses kept in memory until the data changes. The data changes once a day, so the
-cache asks the database for the latest load at most every `check_seconds`; in between,
-identical requests never reach it (Neon can stay asleep)."""
+"""Answers kept in memory until the data changes (a new load), at most `max_entries` of
+them, least recently used dropped first. Keys are built from validated parameters only, so
+junk query strings cannot grow the cache."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import threading
+from collections import OrderedDict
+from collections.abc import Callable, Hashable
 from datetime import datetime
 from typing import Any
 
-from weather_api.access import Clock
-
 
 class ResponseCache:
-    def __init__(
-        self, clock: Clock, check_seconds: float, latest: Callable[[], datetime | None]
-    ) -> None:
-        self._clock, self._check_seconds, self._latest = clock, check_seconds, latest
-        self._checked_at: float | None = None
+    def __init__(self, max_entries: int = 512) -> None:
+        self._max = max_entries
         self._version: datetime | None = None
-        self._entries: dict[str, Any] = {}
+        self._entries: OrderedDict[Hashable, Any] = OrderedDict()
+        self._lock = threading.Lock()
 
-    def _refresh(self) -> None:
-        now = self._clock()
-        if self._checked_at is not None and now - self._checked_at < self._check_seconds:
-            return
-        version = self._latest()
-        if version != self._version:
-            self._entries.clear()
-            self._version = version
-        self._checked_at = now
+    def __len__(self) -> int:
+        return len(self._entries)
 
-    def get_or_compute(self, key: str, compute: Callable[[], Any]) -> Any:
-        self._refresh()
-        if key not in self._entries:
-            self._entries[key] = compute()
-        return self._entries[key]
+    def get_or_compute(self, version: datetime, key: Hashable, compute: Callable[[], Any]) -> Any:
+        with self._lock:
+            if version != self._version:
+                self._entries.clear()
+                self._version = version
+            if key in self._entries:
+                self._entries.move_to_end(key)
+                return self._entries[key]
+        value = compute()  # outside the lock: a slow query must not block cached answers
+        with self._lock:
+            if version == self._version:
+                self._entries[key] = value
+                if len(self._entries) > self._max:
+                    self._entries.popitem(last=False)
+        return value

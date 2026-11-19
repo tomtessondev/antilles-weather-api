@@ -3,27 +3,15 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Any
 
 from sqlalchemy import ColumnElement, Engine, Table, and_, func, select, tuple_
 
-from weather_api.db import daily_air_quality, daily_weather, loads, locations
+from weather_api.db import daily_air_quality, daily_weather
 
 COMPLETE = 24
 EU_PM10_DAILY_LIMIT = 50.0
-
-
-def latest_generated_at(engine: Engine) -> datetime | None:
-    with engine.connect() as conn:
-        value: datetime | None = conn.execute(select(func.max(loads.c.generated_at))).scalar()
-    return value
-
-
-def unknown_codes(engine: Engine, codes: list[str]) -> list[str]:
-    with engine.connect() as conn:
-        known = set(conn.execute(select(locations.c.location_code)).scalars())
-    return [code for code in codes if code not in known]
 
 
 def page(

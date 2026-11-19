@@ -29,8 +29,8 @@ make install / db / check
 
 - Run `make check` before every commit; it must pass (it needs `make db` running).
 - Never call GitHub, Google Cloud or Neon from pytest.
-- Serve complete days only (`hours_observed = 24`); keep Neon asleep between loads (key
-  format check, key cache, in-memory quota and response cache).
+- Serve complete days only (`hours_observed = 24`); keep Neon asleep between loads (the
+  15-minute in-memory snapshot of keys, towns and latest load; in-memory quota and cache).
 - `terraform apply` only after the owner approves the plan; no secrets in the repository.
 - Keep mypy strict; no `type: ignore` without a comment explaining why.
 - Code, comments, commits and README in English.
