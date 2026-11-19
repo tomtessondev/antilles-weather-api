@@ -7,13 +7,15 @@ from collections.abc import Mapping
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import TimeoutError as PoolTimeout
 from starlette.exceptions import HTTPException
 
 TITLES = {
     401: "Unauthorized",
     404: "Not found",
     422: "Invalid request",
+    500: "Internal error",
     429: "Too many requests",
     503: "Service unavailable",
 }
@@ -48,8 +50,14 @@ def install(app: FastAPI) -> None:
     async def unavailable(_: Request, error: DataUnavailable) -> JSONResponse:
         return problem(503, str(error), {"Retry-After": "30"})
 
-    @app.exception_handler(OperationalError)
-    async def database_down(_: Request, __: OperationalError) -> JSONResponse:
+    @app.exception_handler(DBAPIError)
+    @app.exception_handler(PoolTimeout)
+    async def database_down(_: Request, __: Exception) -> JSONResponse:
         return problem(
             503, "The database is unreachable; try again shortly.", {"Retry-After": "30"}
         )
+
+    @app.exception_handler(Exception)
+    async def unexpected(_: Request, __: Exception) -> JSONResponse:
+        # Logged by the server; the caller gets a problem document, never a trace.
+        return problem(500, "Something went wrong on our side.")

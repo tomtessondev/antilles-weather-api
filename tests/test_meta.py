@@ -62,3 +62,32 @@ def test_health_does_not_query_on_every_call(
     for _ in range(10):
         assert api.get("/health").status_code == 200
     assert queries == []
+
+
+def test_database_errors_are_problem_documents(db: Engine, clock: FakeClock) -> None:
+    """A pool timeout (or any other database failure) is a 503 problem, an unexpected
+    error a 500 problem: never a bare text page."""
+    from sqlalchemy.exc import TimeoutError as PoolTimeout
+
+    load_marts(db, Marts.model_validate(RAW))
+    app = create_app(Settings(), engine=db, clock=clock)
+    key = {"X-API-Key": create_key(db, "demo2", per_minute=60)}
+
+    def pool_timeout(*_: object) -> None:
+        raise PoolTimeout("QueuePool limit reached")
+
+    def bug(*_: object) -> None:
+        raise RuntimeError("unexpected")
+
+    api = TestClient(app, raise_server_exceptions=False)
+    for failure, status in ((pool_timeout, 503), (bug, 500)):
+        import weather_api.routes.meta as meta_routes
+
+        original = meta_routes._all_locations
+        meta_routes._all_locations = failure  # type: ignore[assignment]  # injected failure
+        try:
+            response = api.get("/v1/locations", headers=key)
+        finally:
+            meta_routes._all_locations = original
+        assert response.status_code == status
+        assert response.headers["content-type"].startswith("application/problem+json")

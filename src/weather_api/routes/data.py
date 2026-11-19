@@ -58,6 +58,7 @@ class DustPeak(BaseModel):
 
 
 class PeriodFigures(BaseModel):
+    complete_days: int
     start: date
     end: date
     temp_avg_c: float | None

@@ -124,10 +124,12 @@ resource "google_service_account" "deployer" {
   display_name = "Weather API deploys (GitHub Actions)"
 }
 
-resource "google_project_iam_member" "deployer_runs" {
-  project = var.project_id
-  role    = "roles/run.developer"
-  member  = "serviceAccount:${google_service_account.deployer.email}"
+# On this service only: the project is shared with the warehouse.
+resource "google_cloud_run_v2_service_iam_member" "deployer_runs" {
+  name     = google_cloud_run_v2_service.api.name
+  location = var.region
+  role     = "roles/run.developer"
+  member   = "serviceAccount:${google_service_account.deployer.email}"
 }
 
 resource "google_artifact_registry_repository_iam_member" "deployer_pushes" {

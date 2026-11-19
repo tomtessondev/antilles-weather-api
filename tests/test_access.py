@@ -91,3 +91,35 @@ def test_random_well_formed_keys_cost_no_query(
         response = api.get("/v1/locations", headers={"X-API-Key": f"aw_{i:043d}"})
         assert response.status_code == 401
     assert queries == []
+
+
+def test_browsers_can_read_the_quota_headers(db: Engine, clock: FakeClock) -> None:
+    api = client(db, clock)
+    key = {"X-API-Key": create_key(db, "web", per_minute=60), "Origin": "https://example.org"}
+    exposed = api.get("/v1/locations", headers=key).headers["access-control-expose-headers"]
+    assert {"RateLimit-Limit", "RateLimit-Remaining", "Retry-After"} <= {
+        h.strip() for h in exposed.split(",")
+    }
+
+
+def test_the_demo_key_quota_is_counted_per_caller(db: Engine, clock: FakeClock) -> None:
+    """One caller using up the public demo key must not lock everyone else out."""
+    api = client(db, clock)
+    demo = create_key(db, "demo", per_minute=1)
+    first = {"X-API-Key": demo, "X-Forwarded-For": "203.0.113.1"}
+    other = {"X-API-Key": demo, "X-Forwarded-For": "203.0.113.2"}
+    assert api.get("/v1/locations", headers=first).status_code == 200
+    assert api.get("/v1/locations", headers=first).status_code == 429
+    assert api.get("/v1/locations", headers=other).status_code == 200
+
+
+def test_rate_limiter_forgets_expired_windows(clock: FakeClock) -> None:
+    """Forged caller addresses must not grow the quota table without bound."""
+    from weather_api.access import RateLimiter
+
+    limiter = RateLimiter(clock, max_windows=100)
+    for i in range(100):
+        limiter.hit(f"k:{i}", 1)
+    clock.advance(61)
+    limiter.hit("k:new", 1)
+    assert len(limiter) <= 2

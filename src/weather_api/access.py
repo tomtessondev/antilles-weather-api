@@ -24,17 +24,25 @@ API_KEY = APIKeyHeader(
 
 class RateLimiter:
     """A fixed window per key: `limit` calls per `window_seconds`. Only valid keys reach
-    it, so its memory is bounded by the number of keys."""
+    it (the demo key once per caller address), so its memory stays small."""
 
-    def __init__(self, clock: Clock, window_seconds: float = 60) -> None:
+    def __init__(self, clock: Clock, window_seconds: float = 60, max_windows: int = 10_000) -> None:
+        self._max_windows = max_windows
         self._clock, self._window = clock, window_seconds
         self._windows: dict[str, tuple[float, int]] = {}
         self._lock = threading.Lock()
+
+    def __len__(self) -> int:
+        return len(self._windows)
 
     def hit(self, key_hash: str, limit: int) -> tuple[bool, int, int]:
         """(allowed, remaining, seconds until the window resets)."""
         with self._lock:
             now = self._clock()
+            if len(self._windows) >= self._max_windows:
+                self._windows = {
+                    k: w for k, w in self._windows.items() if now - w[0] < self._window
+                }
             start, count = self._windows.get(key_hash, (now, 0))
             if now - start >= self._window:
                 start, count = now, 0
@@ -43,6 +51,20 @@ class RateLimiter:
                 return False, 0, retry_after
             self._windows[key_hash] = (start, count + 1)
             return True, limit - count - 1, retry_after
+
+
+DEMO_KEY_NAME = "demo"
+# The public demo key is counted per caller, so one caller cannot lock everyone out; the
+# caller's address can be forged, so the key as a whole is also capped at ten times that.
+DEMO_CEILING = 10
+
+
+def _caller(request: Request) -> str:
+    """The client address: the first X-Forwarded-For entry behind Cloud Run's proxy."""
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 
 
 def require_key(
@@ -56,7 +78,15 @@ def require_key(
     if info is None:
         raise HTTPException(401, "This API key is unknown or revoked.")
     limiter: RateLimiter = request.app.state.limiter
-    allowed, remaining, retry_after = limiter.hit(key_hash, info.per_minute)
+    if info.name == DEMO_KEY_NAME:
+        allowed, remaining, retry_after = limiter.hit(
+            f"{key_hash}:{_caller(request)}", info.per_minute
+        )
+        if allowed:
+            allowed, _, retry_after = limiter.hit(key_hash, info.per_minute * DEMO_CEILING)
+            remaining = remaining if allowed else 0
+    else:
+        allowed, remaining, retry_after = limiter.hit(key_hash, info.per_minute)
     limit_headers = {"RateLimit-Limit": str(info.per_minute), "RateLimit-Remaining": str(remaining)}
     if not allowed:
         raise HTTPException(

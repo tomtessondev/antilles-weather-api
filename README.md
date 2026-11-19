@@ -21,7 +21,8 @@ curl -H "X-API-Key: aw_QdQUnLvY1Ne2TOfZXPrP_2yex_ty9u9c03gHqnCgHgw" \
   "https://weather-api-v4mw6h4rqa-uk.a.run.app/v1/locations/FDF/summary?days=7"
 ```
 
-The demo key allows 60 requests a minute. The first call after a quiet spell can take a
+The demo key allows 60 requests a minute per caller (and ten times that in all, so a forged
+address cannot take more). The first call after a quiet spell can take a
 second or two: the service and the database wake up.
 
 ## Routes
@@ -40,7 +41,8 @@ The daily routes filter by `location` (repeatable), `start` and `end` (ISO dates
 and page with `limit` (up to 500) and the `next_cursor` of the previous page. Only complete
 days are served: the export's last day is still being measured and its forecast day is not
 a measurement. Errors are [problem details](https://www.rfc-editor.org/rfc/rfc9457) (`401`
-key, `404` unknown town, `422` bad parameter, `429` quota, `503` database unavailable).
+key, `404` unknown town, `422` bad parameter, `429` quota, `503` database unavailable, `500`
+anything unexpected). Answers are marked `Cache-Control: private`: they sit behind a key.
 
 ## Architecture
 
