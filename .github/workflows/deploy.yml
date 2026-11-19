@@ -1,0 +1,53 @@
+name: Deploy
+
+permissions:
+  contents: read
+
+# On main: test, migrate the Neon database, build the image, deploy it to Cloud Run.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency: deploy
+
+env:
+  REGION: us-east4
+  IMAGE: us-east4-docker.pkg.dev/antilles-hurricanes/weather-api/api
+
+jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    needs: test
+    # Only main deploys and migrates; the production environment holds DATABASE_URL and only
+    # accepts main.
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - name: Migrate the database (direct Neon URL, not the pooler)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: alembic upgrade head
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Build and push the image
+        run: |
+          gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
+          docker build -t "$IMAGE:$GITHUB_SHA" .
+          docker push "$IMAGE:$GITHUB_SHA"
+      - name: Deploy to Cloud Run
+        run: gcloud run deploy weather-api --image "$IMAGE:$GITHUB_SHA" --region "$REGION" --quiet

@@ -151,3 +151,14 @@ Vercel functions (no real container) and Render free (sleeps 30 s, database expi
 - The SQL of the summary and dust-episode queries; the cursor encoding.
 - The Alembic layout; the Dockerfile (multi-stage, non-root user).
 - The exact Terraform resources for Artifact Registry, Secret Manager and Cloud Run IAM.
+
+## Amended after the final review (2026-11-20)
+
+The database is read for requests through an in-memory snapshot (active keys, town codes,
+latest load) refreshed at most every 15 minutes, instead of a 60 s key cache and a 60 s
+freshness check: random keys, unknown towns and `/health` cost no query, and Neon can sleep
+under light traffic. A new or revoked key, and new data, take effect within 15 minutes.
+Answers are cached under keys built from validated parameters (512 at most). The loader
+skips files older than the latest load and refuses empty ones. Deploys, migrations and the
+daily load run only on `main`, in a `production` environment, and the WIF provider accepts
+only `refs/heads/main`.

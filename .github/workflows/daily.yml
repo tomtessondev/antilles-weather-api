@@ -1,0 +1,26 @@
+name: Daily load
+
+# The batch project exports its marts at 10:00 UTC; load them an hour later.
+on:
+  schedule:
+    - cron: "0 11 * * *"
+  workflow_dispatch:
+
+concurrency: load
+
+jobs:
+  load:
+    environment: production
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - name: Load marts.json into Neon
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: weather-api load
