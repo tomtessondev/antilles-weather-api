@@ -13,11 +13,11 @@ both stay inside their free tiers.
 click *Authorize* and paste the demo key:
 
 ```text
-DEMO_KEY
+aw_QdQUnLvY1Ne2TOfZXPrP_2yex_ty9u9c03gHqnCgHgw
 ```
 
 ```bash
-curl -H "X-API-Key: DEMO_KEY" \
+curl -H "X-API-Key: aw_QdQUnLvY1Ne2TOfZXPrP_2yex_ty9u9c03gHqnCgHgw" \
   "https://weather-api-v4mw6h4rqa-uk.a.run.app/v1/locations/FDF/summary?days=7"
 ```
 

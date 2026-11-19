@@ -22,7 +22,9 @@ Daily weather and air quality for six towns of Guadeloupe and Martinique, from t
 [antilles-data-pipeline](https://github.com/tomtessondev/antilles-data-pipeline) marts,
 loaded every morning. Complete days only.
 
-Every `/v1` call needs an API key in the `X-API-Key` header.
+Every `/v1` call needs an API key in the `X-API-Key` header. To try the API, click
+**Authorize** and use the public demo key (60 requests a minute, shared by everyone):
+`aw_QdQUnLvY1Ne2TOfZXPrP_2yex_ty9u9c03gHqnCgHgw`
 """
 
 
