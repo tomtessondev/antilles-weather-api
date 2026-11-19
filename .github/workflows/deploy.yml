@@ -3,7 +3,7 @@ name: Deploy
 permissions:
   contents: read
 
-# On main: test, migrate the Neon database, build the image, deploy it to Cloud Run.
+# On main: test, build the image, migrate the Neon database, deploy the image to Cloud Run.
 on:
   push:
     branches: [main]
@@ -30,24 +30,25 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install -e .
-      - name: Migrate the database (direct Neon URL, not the pooler)
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: alembic upgrade head
-      - uses: google-github-actions/auth@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
-      - uses: google-github-actions/setup-gcloud@v2
+      - uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2
+      # The image first: if it does not build, the schema is left as it is.
       - name: Build and push the image
         run: |
           gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
           docker build -t "$IMAGE:$GITHUB_SHA" .
           docker push "$IMAGE:$GITHUB_SHA"
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - run: pip install -c requirements.lock -e .
+      - name: Migrate the database (direct Neon URL, not the pooler)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: alembic upgrade head
       - name: Deploy to Cloud Run
         run: gcloud run deploy weather-api --image "$IMAGE:$GITHUB_SHA" --region "$REGION" --quiet

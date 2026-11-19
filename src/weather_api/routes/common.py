@@ -11,7 +11,8 @@ from weather_api.cache import ResponseCache
 from weather_api.problems import DataUnavailable
 from weather_api.snapshot import Snapshot, State
 
-CACHE_CONTROL = "public, max-age=300"
+# private: the answers sit behind a key, a shared cache must not serve them to anyone.
+CACHE_CONTROL = "private, max-age=300"
 
 
 def loaded_state(request: Request) -> tuple[State, datetime]:

@@ -40,7 +40,11 @@ def create_app(
     app.state.snapshot = Snapshot(app.state.engine, clock, settings.refresh_seconds)
     app.state.response_cache = ResponseCache()
     app.add_middleware(
-        CORSMiddleware, allow_origins=["*"], allow_methods=["GET"], allow_headers=["X-API-Key"]
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["GET"],
+        allow_headers=["X-API-Key"],
+        expose_headers=["RateLimit-Limit", "RateLimit-Remaining", "Retry-After"],
     )
     problems.install(app)
     app.include_router(meta.router)

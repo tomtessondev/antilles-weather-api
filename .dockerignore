@@ -12,3 +12,7 @@ migrations
 scripts
 *.md
 !README.md
+.env.local
+.neon
+tfplan
+.env

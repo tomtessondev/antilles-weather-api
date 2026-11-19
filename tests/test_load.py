@@ -116,3 +116,20 @@ def test_an_empty_file_is_refused(db: Engine) -> None:
     empty["weather"] = []
     with pytest.raises(ValidationError):
         load_marts(db, Marts.model_validate(empty))
+
+
+def test_a_large_export_loads(db: Engine) -> None:
+    """Far more rows than one statement's 65,535 parameters allow."""
+    from datetime import date, timedelta
+
+    big = json.loads(json.dumps(RAW))
+    start = date(2000, 1, 1)
+    weather, air = [], []
+    for code in ("BTE", "FDF"):
+        for n in range(5000):
+            day = (start + timedelta(days=n)).isoformat()
+            weather.append(dict(RAW["weather"][0], location_code=code, observed_date=day))
+            air.append(dict(RAW["air_quality"][0], location_code=code, observed_date=day))
+    big["weather"], big["air_quality"] = weather, air
+    assert load_marts(db, Marts.model_validate(big)).weather_rows == 10_000
+    assert count(db, daily_weather) == 10_000

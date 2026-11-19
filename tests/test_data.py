@@ -97,10 +97,6 @@ def test_dust_episodes_list_days_above_the_limit(api: tuple[TestClient, dict[str
     ]
 
 
-def test_data_responses_can_be_cached(api: tuple[TestClient, dict[str, str]]) -> None:
-    assert get(api, "/v1/weather").headers["Cache-Control"] == "public, max-age=300"
-
-
 def test_empty_database_is_503_for_data_routes(db: Engine, clock: FakeClock) -> None:
     key = {"X-API-Key": create_key(db, "test", per_minute=1000)}
     client = TestClient(create_app(Settings(), engine=db, clock=clock))
@@ -117,3 +113,28 @@ def test_unknown_parameters_do_not_grow_the_cache(
     for i in range(30):
         get(api, "/v1/weather", junk=str(i))
     assert len(client.app.state.response_cache) == 1  # type: ignore[attr-defined]  # Starlette app
+
+
+def test_keyed_answers_are_cached_privately(api: tuple[TestClient, dict[str, str]]) -> None:
+    """Behind a key, a shared cache must not hand the answer to callers without one."""
+    assert get(api, "/v1/weather").headers["Cache-Control"] == "private, max-age=300"
+
+
+def test_episodes_and_limit_days_follow_the_export_flag(db: Engine, clock: FakeClock) -> None:
+    """The export decides what counts as above the EU limit; the API does not redefine it."""
+    flagged = json.loads(json.dumps(RAW))
+    flagged["air_quality"][1]["exceeds_pm10_daily_limit"] = False  # BTE 2026-11-02, PM10 62
+    flagged["air_quality"][4]["exceeds_pm10_daily_limit"] = True  # FDF 2026-11-02, PM10 40
+    load_marts(db, Marts.model_validate(flagged))
+    key = {"X-API-Key": create_key(db, "test", per_minute=1000)}
+    client = TestClient(create_app(Settings(), engine=db, clock=clock))
+    items = client.get("/v1/dust-episodes", headers=key).json()["items"]
+    assert [(i["location_code"], i["observed_date"]) for i in items] == [("FDF", "2026-11-02")]
+    summary = client.get("/v1/locations/BTE/summary", headers=key).json()
+    assert summary["days_above_pm10_limit"] == 0
+
+
+def test_summary_says_how_many_complete_days_it_covers(
+    api: tuple[TestClient, dict[str, str]],
+) -> None:
+    assert get(api, "/v1/locations/BTE/summary", days=7).json()["complete_days"] == 2

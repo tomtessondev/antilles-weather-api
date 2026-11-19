@@ -1,9 +1,9 @@
 # Build a wheel, then install it in a slim image that runs as a non-root user.
 FROM python:3.12-slim AS build
 WORKDIR /src
-COPY pyproject.toml README.md ./
+COPY pyproject.toml README.md requirements.lock ./
 COPY src ./src
-RUN pip wheel --no-cache-dir --wheel-dir /wheels .
+RUN pip wheel --no-cache-dir --wheel-dir /wheels -c requirements.lock .
 
 FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PORT=8080

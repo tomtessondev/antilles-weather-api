@@ -9,13 +9,14 @@ from datetime import UTC, datetime
 from typing import Any
 
 import httpx
-from sqlalchemy import Connection, Engine, Table, delete, func, select, true, tuple_
+from sqlalchemy import Connection, Engine, Table, delete, func, select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 
 from weather_api.db import daily_air_quality, daily_weather, loads, locations
 from weather_api.marts import Marts
 
 DAILY_KEYS = ["location_code", "observed_date"]
+DELETE_BATCH = 1000
 
 
 @dataclass(frozen=True)
@@ -33,19 +34,24 @@ def fetch_marts(client: httpx.Client, url: str) -> Marts:
 
 
 def _upsert(conn: Connection, table: Table, rows: list[dict[str, Any]], keys: list[str]) -> None:
+    """One statement run for every row (executemany): no parameter limit on large exports."""
     if not rows:
         return
-    statement = insert(table).values(rows)
+    statement = insert(table)
     updates = {c.name: statement.excluded[c.name] for c in table.columns if c.name not in keys}
-    conn.execute(statement.on_conflict_do_update(index_elements=keys, set_=updates))
+    conn.execute(statement.on_conflict_do_update(index_elements=keys, set_=updates), rows)
 
 
 def _delete_missing(
     conn: Connection, table: Table, rows: list[dict[str, Any]], keys: list[str]
 ) -> None:
-    present = [tuple(row[k] for k in keys) for row in rows]
-    columns = tuple_(*(table.c[k] for k in keys))
-    conn.execute(delete(table).where(columns.not_in(present) if present else true()))
+    """Delete the rows the file no longer holds, by key, a batch at a time."""
+    columns = [table.c[k] for k in keys]
+    present = {tuple(row[k] for k in keys) for row in rows}
+    stored = {tuple(row) for row in conn.execute(select(*columns))}
+    missing = sorted(stored - present)
+    for i in range(0, len(missing), DELETE_BATCH):
+        conn.execute(delete(table).where(tuple_(*columns).in_(missing[i : i + DELETE_BATCH])))
 
 
 def load_marts(engine: Engine, marts: Marts) -> LoadResult:

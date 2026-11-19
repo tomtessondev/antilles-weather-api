@@ -1,7 +1,7 @@
 .PHONY: install db lint typecheck test check migrate load run clean
 
 install:
-	pip install -e ".[dev]"
+	pip install -c requirements.lock -e ".[dev]"
 
 # Local PostgreSQL on port 5435 (5433 and 5434 belong to the other projects).
 db:

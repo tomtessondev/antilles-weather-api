@@ -11,7 +11,6 @@ from sqlalchemy import ColumnElement, Engine, Table, and_, func, select, tuple_
 from weather_api.db import daily_air_quality, daily_weather
 
 COMPLETE = 24
-EU_PM10_DAILY_LIMIT = 50.0
 
 
 def page(
@@ -77,7 +76,7 @@ def period_figures(engine: Engine, code: str, start: date, end: date) -> dict[st
         air = conn.execute(
             select(
                 func.avg(daily_air_quality.c.pm10_avg_ugm3),
-                func.count().filter(daily_air_quality.c.pm10_avg_ugm3 > EU_PM10_DAILY_LIMIT),
+                func.count().filter(daily_air_quality.c.exceeds_pm10_daily_limit),
             ).where(in_period(daily_air_quality))
         ).one()
         peak = conn.execute(
@@ -90,6 +89,7 @@ def period_figures(engine: Engine, code: str, start: date, end: date) -> dict[st
         return None
     return {
         "start": start,
+        "complete_days": weather[0],
         "end": end,
         "temp_avg_c": _round(weather[1]),
         "rain_total_mm": _round(weather[2]),
@@ -115,7 +115,8 @@ def dust_episodes(
     engine: Engine, codes: list[str], start: date | None, end: date | None
 ) -> list[dict[str, Any]]:
     t = daily_air_quality
-    conditions = [t.c.hours_observed == COMPLETE, t.c.pm10_avg_ugm3 > EU_PM10_DAILY_LIMIT]
+    # The export decides what is above the EU limit (its own flag), not the API.
+    conditions = [t.c.hours_observed == COMPLETE, t.c.exceeds_pm10_daily_limit]
     if codes:
         conditions.append(t.c.location_code.in_(codes))
     if start:
