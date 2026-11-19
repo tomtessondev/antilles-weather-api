@@ -1,0 +1,14 @@
+.venv
+.git
+.github
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+tests
+docs
+infra
+migrations
+scripts
+*.md
+!README.md
