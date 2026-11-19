@@ -42,3 +42,5 @@ plugins = ["pydantic.mypy"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--cov=weather_api --cov-report=term-missing:skip-covered"
+# Starlette asks for httpx2 in its test client; httpx is what FastAPI documents today.
+filterwarnings = ["ignore:Using `httpx` with `starlette.testclient`"]

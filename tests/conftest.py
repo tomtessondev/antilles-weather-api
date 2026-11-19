@@ -35,3 +35,36 @@ def db(engine: Engine) -> Engine:
     with engine.begin() as conn:
         conn.execute(text(f"TRUNCATE {', '.join(TABLES)} RESTART IDENTITY CASCADE"))
     return engine
+
+
+class FakeClock:
+    """A monotonic clock the tests move by hand."""
+
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+
+@pytest.fixture
+def clock() -> FakeClock:
+    return FakeClock()
+
+
+@pytest.fixture
+def queries(db: Engine) -> Iterator[list[str]]:
+    """Every SQL statement sent while the test runs."""
+    from sqlalchemy import event
+
+    sent: list[str] = []
+
+    def record(*args: object) -> None:
+        sent.append(str(args[2]))
+
+    event.listen(db, "before_cursor_execute", record)
+    yield sent
+    event.remove(db, "before_cursor_execute", record)
