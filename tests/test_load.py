@@ -87,3 +87,12 @@ def test_a_town_removed_with_its_rows_is_deleted(db: Engine) -> None:
         3,
         3,
     )
+
+
+def test_extra_fields_in_the_file_are_ignored(db: Engine) -> None:
+    """The batch export may add columns (it has `last_extracted_at`); like the dashboard's
+    zod schema, the loader keeps the fields it knows and ignores the others."""
+    richer = json.loads(json.dumps(RAW))
+    for row in richer["air_quality"]:
+        row["last_extracted_at"] = "2026-11-04T10:00:00"
+    assert load_marts(db, Marts.model_validate(richer)).air_quality_rows == 6

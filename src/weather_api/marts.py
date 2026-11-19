@@ -10,7 +10,8 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict
 
 
 class _Row(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    # Unknown fields are ignored, as the dashboard's zod schema does: the export may grow.
+    model_config = ConfigDict(extra="ignore", frozen=True)
 
 
 class Location(_Row):
