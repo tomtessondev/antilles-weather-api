@@ -11,9 +11,11 @@ from sqlalchemy import Engine
 
 from weather_api import problems
 from weather_api.access import Clock, KeyCache, RateLimiter
+from weather_api.cache import ResponseCache
 from weather_api.config import Settings, get_settings
 from weather_api.db import engine_for
-from weather_api.routes import meta
+from weather_api.queries import latest_generated_at
+from weather_api.routes import data, meta
 
 DESCRIPTION = """
 Daily weather and air quality for six towns of Guadeloupe and Martinique, from the
@@ -34,12 +36,16 @@ def create_app(
     app.state.clock = clock
     app.state.key_cache = KeyCache(clock)
     app.state.limiter = RateLimiter(clock)
+    app.state.response_cache = ResponseCache(
+        clock, settings.cache_check_seconds, lambda: latest_generated_at(app.state.engine)
+    )
     app.add_middleware(
         CORSMiddleware, allow_origins=["*"], allow_methods=["GET"], allow_headers=["X-API-Key"]
     )
     problems.install(app)
     app.include_router(meta.router)
     app.include_router(meta.v1)
+    app.include_router(data.router)
     return app
 
 
